@@ -1,0 +1,70 @@
+{
+    "keyboard_name": "Devils Hand",
+    "manufacturer": "DesignedbyGG",
+    "maintainer": "HorrorTroll",
+    "usb": {
+        "vid": "0x3911",
+        "pid": "0x6969",
+        "device_version": "1.1.0"
+    },
+    "matrix_pins": {
+        "direct": [
+            ["A1", "B8", "A4", "A2", "F11", "A3"]
+        ]
+    },
+    "processor": "AT32F405",
+    "bootloader": "at32-dfu",
+    "features": {
+        "bootmagic": true,
+        "mousekey": true,
+        "extrakey": true,
+        "console": true,
+        "command": false,
+        "nkro": true,
+        "encoder": true,
+        "pointing_device": true,
+        "rgb_matrix": true
+    },
+    "encoder": {
+        "rotary": [
+            {"pin_a": "A5", "pin_b": "A0", "resolution": 2}
+        ]
+    },
+    "ws2812": {
+        "pin": "A6",
+        "driver": "pwm"
+    },
+    "rgb_matrix": {
+        "driver": "ws2812",
+        "led_count": 2,
+        "animations": {
+            "gradient_left_right": true,
+            "breathing": true,
+            "band_val": true,
+            "cycle_all": true,
+            "cycle_left_right": true,
+            "raindrops": true,
+            "jellybean_raindrops": true,
+            "hue_breathing": true,
+            "hue_pendulum": true,
+            "hue_wave": true,
+            "pixel_rain": true
+        },
+        "layout": [
+            {"x": 0, "y": 0, "flags": 2},
+            {"x": 224, "y": 0, "flags": 2}
+        ]
+    },
+    "layouts": {
+        "LAYOUT": {
+            "layout": [
+                {"x": 0, "y": 0, "h": 1.5, "matrix": [0, 0]},
+                {"x": 1.5, "y": 0.25, "h": 1, "matrix": [0, 1]},
+                {"x": 3, "y": 0, "h": 1.5, "matrix": [0, 2]},
+                {"x": 0, "y": 2.25, "matrix": [0, 3]},
+                {"x": 1.5, "y": 2.25, "matrix": [0, 4]},
+                {"x": 0, "y": 3.25, "matrix": [0, 5]}
+            ]
+        }
+    }
+}
