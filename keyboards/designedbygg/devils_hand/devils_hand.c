@@ -37,18 +37,14 @@ void cycle_dpi(void) {
 }
 
 bool rgb_matrix_indicators_advanced_kb(uint8_t led_min, uint8_t led_max) {
-    if (!rgb_matrix_indicators_advanced_user(led_min, led_max)) {
-        return false;
-    }
-
     rgb_t dpi_colors[] = {
-        {255,   0,   0},
-        {255, 255,   0},
-        {  0, 255,   0},
-        {  0, 255, 255},
-        {  0,   0, 255},
-        {255,   0, 255},
-        {255, 255, 255},
+        {RGB_RED},
+        {RGB_YELLOW},
+        {RGB_GREEN},
+        {RGB_CYAN},
+        {RGB_BLUE},
+        {RGB_MAGENTA},
+        {RGB_WHITE},
     };
 
     if (dpi_indicator_active) {
