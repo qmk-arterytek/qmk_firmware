@@ -28,14 +28,20 @@
 #    define PAW3311_GAMING_MODE MODE_1
 #endif
 
-typedef enum {
-    LENS_1, // LM31-LNG, LM33-LSG, L0AL-LSG1
-    LENS_2  // L0AJ-LSG1
-} paw3311_lens_t;
+#define LENS_1 0
+#define LENS_2 1
 
 typedef enum {
-    MODE_1, // Low power mode
-    MODE_2  // Corded mode
+    THT_LENS = LENS_1, // LM31-LNG, LM33-LSG, L0AL-LSG1
+    SMD_LENS = LENS_2  // L0AJ-LSG1
+} paw3311_lens_t;
+
+#define MODE_1 0
+#define MODE_2 1
+
+typedef enum {
+    LPM    = MODE_1, // Low power mode
+    CORDED = MODE_2  // Corded mode
 } paw3311_mode_t;
 
 typedef struct {
@@ -59,4 +65,7 @@ bool             paw3311_check_signature(void);
 #define PAW3311_CPI_STEP 50
 #define PAW3311_CPI_MIN 50
 #define PAW3311_CPI_MAX 10000
+#define PAW3311_CPI_EXT_STEP 100
+#define PAW3311_CPI_EXT_MIN 10100
+#define PAW3311_CPI_EXT_MAX 12000
 #define CONSTRAIN(amt, low, high) ((amt) < (low) ? (low) : ((amt) > (high) ? (high) : (amt)))
