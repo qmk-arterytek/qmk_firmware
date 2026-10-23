@@ -657,19 +657,6 @@ void paw3311_set_cpi(uint16_t cpi) {
 }
 
 uint16_t paw3311_get_cpi(void) {
-//    uint8_t cpival;
-//
-//    if (paw3311_read(0x4E, &cpival) != SPI_STATUS_SUCCESS) {
-//        return 0;
-//    }
-//
-//    for (uint8_t cpi = 0; cpi < ARRAY_SIZE(paw3311_cpi_lut); cpi++) {
-//        if (paw3311_cpi_lut[cpi] == cpival) {
-//            return (cpi + 1) * (paw3311_cpi_ext ? PAW3311_CPI_EXT_STEP : PAW3311_CPI_STEP);
-//        }
-//    }
-//
-//    return 0;
     return paw3311_last_cpi;
 }
 
