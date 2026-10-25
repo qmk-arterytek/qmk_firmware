@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <string.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -11,6 +12,9 @@
 #include "usb_types.h"
 #include "usb_driver.h"
 #include "report.h"
+
+// report.data is the source of EP0 transfers (GET_REPORT), which the USB DMA reads directly: keep it word aligned.
+_Static_assert(offsetof(usb_fs_report_t, data) % 4 == 0, "usb_fs_report_t.data must be word aligned");
 
 extern usb_endpoint_in_t     usb_endpoints_in[USB_ENDPOINT_IN_COUNT];
 extern usb_endpoint_in_lut_t usb_endpoint_interface_lut[TOTAL_INTERFACES];

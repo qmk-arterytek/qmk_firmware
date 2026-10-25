@@ -71,6 +71,45 @@ static bool __attribute__((__unused__)) receive_report(usb_endpoint_out_lut_t en
 #endif
 
 /*
+ * EP0 data stage buffers and DMA.
+ *
+ * When the USB peripheral uses DMA, every buffer handed to usbSetupTransfer()
+ * is accessed directly by the DMA engine, so it must be in word aligned RAM
+ * (not flash) and, for transfers from the host, large enough to hold whole
+ * words. Descriptors live in flash with byte alignment, so they are staged
+ * through a word aligned RAM buffer first.
+ *
+ * Enabled automatically for AT32 OTG2 (HS) with DMA, can be forced on or off
+ * with USB_EP0_STAGE_IN_RAM in config.h.
+ */
+#ifndef USB_EP0_STAGE_IN_RAM
+#    if defined(AT32_USB_USE_OTG2) && AT32_USB_USE_OTG2 && defined(AT32_USE_USB_OTG2_HS_DMA) && AT32_USE_USB_OTG2_HS_DMA
+#        define USB_EP0_STAGE_IN_RAM 1
+#    else
+#        define USB_EP0_STAGE_IN_RAM 0
+#    endif
+#endif
+
+#if USB_EP0_STAGE_IN_RAM
+#    ifndef USB_EP0_IN_STAGE_SIZE
+#        define USB_EP0_IN_STAGE_SIZE 512
+#    endif
+
+_Static_assert(sizeof(USB_Descriptor_Configuration_t) <= USB_EP0_IN_STAGE_SIZE, "USB_EP0_IN_STAGE_SIZE is too small for the configuration descriptor");
+
+static uint8_t _Alignas(4) ep0_in_stage[USB_EP0_IN_STAGE_SIZE];
+
+/* Copies a descriptor into word aligned RAM, NULL if it does not fit. */
+static const uint8_t *usb_ep0_stage_in_ram(const uint8_t *src, size_t len) {
+    if (src == NULL || len > sizeof(ep0_in_stage)) {
+        return NULL;
+    }
+    memcpy(ep0_in_stage, src, len);
+    return ep0_in_stage;
+}
+#endif
+
+/*
  * Handles the GET_DESCRIPTOR callback
  *
  * Returns the proper descriptor
@@ -85,6 +124,13 @@ static const USBDescriptor *usb_get_descriptor_cb(USBDriver *usbp, uint8_t dtype
     if (descriptor.ud_string == NULL) {
         return NULL;
     }
+
+#if USB_EP0_STAGE_IN_RAM
+    descriptor.ud_string = usb_ep0_stage_in_ram(descriptor.ud_string, descriptor.ud_size);
+    if (descriptor.ud_string == NULL) {
+        return NULL;
+    }
+#endif
 
     return &descriptor;
 }
@@ -231,7 +277,9 @@ static void usb_event_cb(USBDriver *usbp, usbevent_t event) {
  * Other Device    Required    Optional    Optional    Optional    Optional    Optional
  */
 
-static uint8_t _Alignas(4) set_report_buf[2];
+// Padded to a whole word: DMA writes whole words, the transfer itself is 2 bytes.
+#define SET_REPORT_BUF_LEN 2
+static uint8_t _Alignas(4) set_report_buf[4];
 
 static void set_led_transfer_cb(USBDriver *usbp) {
     usb_control_request_t *setup = (usb_control_request_t *)usbp->setup;
@@ -246,8 +294,73 @@ static void set_led_transfer_cb(USBDriver *usbp) {
     }
 }
 
+#if USB_EP0_STAGE_IN_RAM
+/*
+ * The ChibiOS default handler answers GET_STATUS and GET_CONFIGURATION from
+ * unaligned fields and flash constants. Answer them here instead, from
+ * aligned RAM, with the same semantics. Anything not handled here falls
+ * through to the default handler.
+ */
+static bool usb_std_in_requests_cb(USBDriver *usbp) {
+    usb_control_request_t *setup = (usb_control_request_t *)usbp->setup;
+
+    if ((setup->bmRequestType & (USB_RTYPE_DIR_MASK | USB_RTYPE_TYPE_MASK)) != (USB_RTYPE_DIR_DEV2HOST | USB_RTYPE_TYPE_STD)) {
+        return false;
+    }
+
+    static uint8_t _Alignas(4) std_buf[4];
+
+    switch (setup->bRequest) {
+        case USB_REQ_GET_STATUS:
+            switch (setup->bmRequestType & USB_RTYPE_RECIPIENT_MASK) {
+                case USB_RTYPE_RECIPIENT_DEVICE:
+                    std_buf[0] = (uint8_t)(usbp->status & 0xFFU);
+                    std_buf[1] = (uint8_t)(usbp->status >> 8);
+                    break;
+                case USB_RTYPE_RECIPIENT_INTERFACE:
+                    std_buf[0] = 0;
+                    std_buf[1] = 0;
+                    break;
+                case USB_RTYPE_RECIPIENT_ENDPOINT: {
+                    usbepstatus_t status = ((usbp->setup[4] & 0x80U) != 0U) ? usb_lld_get_status_in(usbp, usbp->setup[4] & 0x0FU) : usb_lld_get_status_out(usbp, usbp->setup[4] & 0x0FU);
+                    if (status == EP_STATUS_STALLED) {
+                        std_buf[0] = 1;
+                    } else if (status == EP_STATUS_ACTIVE) {
+                        std_buf[0] = 0;
+                    } else {
+                        return false;
+                    }
+                    std_buf[1] = 0;
+                    break;
+                }
+                default:
+                    return false;
+            }
+            usbSetupTransfer(usbp, std_buf, 2, NULL);
+            return true;
+
+        case USB_REQ_GET_CONFIGURATION:
+            if ((setup->bmRequestType & USB_RTYPE_RECIPIENT_MASK) != USB_RTYPE_RECIPIENT_DEVICE) {
+                return false;
+            }
+            std_buf[0] = usbp->configuration;
+            usbSetupTransfer(usbp, std_buf, 1, NULL);
+            return true;
+
+        default:
+            return false;
+    }
+}
+#endif
+
 static bool usb_requests_hook_cb(USBDriver *usbp) {
     usb_control_request_t *setup = (usb_control_request_t *)usbp->setup;
+
+#if USB_EP0_STAGE_IN_RAM
+    if (usb_std_in_requests_cb(usbp)) {
+        return true;
+    }
+#endif
 
     /* Handle HID class specific requests */
     if ((setup->bmRequestType & (USB_RTYPE_TYPE_MASK | USB_RTYPE_RECIPIENT_MASK)) == (USB_RTYPE_TYPE_CLASS | USB_RTYPE_RECIPIENT_INTERFACE)) {
@@ -258,7 +371,7 @@ static bool usb_requests_hook_cb(USBDriver *usbp) {
                         return usb_get_report_cb(usbp);
                     case HID_REQ_GetProtocol:
                         if (setup->wIndex == KEYBOARD_INTERFACE) {
-                            static uint8_t keyboard_protocol;
+                            static uint8_t _Alignas(4) keyboard_protocol;
                             keyboard_protocol = usb_device_state_get_protocol();
                             usbSetupTransfer(usbp, &keyboard_protocol, sizeof(keyboard_protocol), NULL);
                             return true;
@@ -277,7 +390,7 @@ static bool usb_requests_hook_cb(USBDriver *usbp) {
 #if defined(SHARED_EP_ENABLE) && !defined(KEYBOARD_SHARED_EP)
                             case SHARED_INTERFACE:
 #endif
-                                usbSetupTransfer(usbp, set_report_buf, sizeof(set_report_buf), set_led_transfer_cb);
+                                usbSetupTransfer(usbp, set_report_buf, SET_REPORT_BUF_LEN, set_led_transfer_cb);
                                 return true;
                         }
                         break;
@@ -547,17 +660,21 @@ bool recv_midi_packet(MIDI_EventPacket_t *const event) {
 /**
  * @brief CDC serial driver configuration structure. Set to 9600 baud, 1 stop bit, no parity, 8 data bits.
  */
-static cdc_linecoding_t linecoding = {{0x00, 0x96, 0x00, 0x00}, LC_STOP_1, LC_PARITY_NONE, 8};
+// Word aligned and padded to a whole number of words, as DMA reads/writes whole words.
+static union {
+    cdc_linecoding_t lc;
+    uint32_t         dma_pad[2];
+} linecoding_buf = {.lc = {{0x00, 0x96, 0x00, 0x00}, LC_STOP_1, LC_PARITY_NONE, 8}};
 
 bool virtser_usb_request_cb(USBDriver *usbp) {
     if ((usbp->setup[0] & USB_RTYPE_TYPE_MASK) == USB_RTYPE_TYPE_CLASS) { /* bmRequestType */
         if (usbp->setup[4] == CCI_INTERFACE) {                            /* wIndex (LSB) */
             switch (usbp->setup[1]) {                                     /* bRequest */
                 case CDC_GET_LINE_CODING:
-                    usbSetupTransfer(usbp, (uint8_t *)&linecoding, sizeof(linecoding), NULL);
+                    usbSetupTransfer(usbp, (uint8_t *)&linecoding_buf.lc, sizeof(linecoding_buf.lc), NULL);
                     return true;
                 case CDC_SET_LINE_CODING:
-                    usbSetupTransfer(usbp, (uint8_t *)&linecoding, sizeof(linecoding), NULL);
+                    usbSetupTransfer(usbp, (uint8_t *)&linecoding_buf.lc, sizeof(linecoding_buf.lc), NULL);
                     return true;
                 case CDC_SET_CONTROL_LINE_STATE:
                     /* Nothing to do, there are no control lines.*/
